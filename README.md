@@ -83,6 +83,8 @@ repo build up to:
 | A sub-page done plainly: a D-pad remote off the Office page | The app launcher, another sub-page — names, not reverse-DNS ids |
 | ![AI sessions list](docs/media/sessions.png) | ![Claude control page](docs/media/claude.png) |
 | **Sessions** — every AI session on the box, paged, tagged NEW/RUN | **Claude's page** — model picker, quick actions, and a token footer; `--` means no window is open, and the page says so instead of guessing |
+| ![Codex control page](docs/media/codex.png) | ![Outlook page](docs/media/outlook.png) |
+| **Codex's page** — mode and model switches, plus one-tap new chats in the repos I actually use | **Outlook** — unread/flagged counts, the next meeting with a JOIN button, and a one-tap inbox sweep |
 
 What is here is the part that transfers:
 
