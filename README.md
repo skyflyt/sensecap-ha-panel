@@ -263,6 +263,11 @@ in the package yet:
 | ![Pip speaks](docs/media/pet-speaks.png) | ![Empty pod](docs/media/pet-trip.png) |
 | **He speaks.** A line in a bubble, written by `llama3.2:3b` on the workstation from what the panel already knows — sessions waiting, next meeting, weather, his own mood. Template lines when the workstation is off, one line per ten minutes at most. The panel only *asks*; HA picks the voice | **Time-lapse.** Every ten minutes HA fetches `/screenshot`, keeps a 240px frame, and stitches the day into a GIF at 23:30. The panel photographs itself. Frames skip while the PC is locked |
 
+Nothing in any of it knows who you are: the owner's name and the agent's
+name are two `input_text` settings (`pet_owner_name`, `pet_agent_name`) that
+the voice prompt, the fallback lines and the "petted by" logbook credit all
+read. Set them once; nobody's name is in the code.
+
 The pieces: `tools/make-pet-extras.py` draws the overlays and the pod;
 `pip/capture.py` + `pip/stitch.py` are the time-lapse (they run *inside* the
 HA core container via `shell_command` — Python and Pillow are already there);
