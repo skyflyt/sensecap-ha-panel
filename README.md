@@ -251,6 +251,24 @@ complete slice-1 loop the write-ups describe; the rest is documented in
 [`docs/desk-pet/`](docs/desk-pet/) as design if you want to grow yours the
 same direction.
 
+### The over-the-top chapter
+
+Four things added in one sitting (2026-09-01), all on the desk build, none
+in the package yet:
+
+| | |
+|---|---|
+| ![Pip in a call, speaking](docs/media/pet-call-speaks.png) | ![Postcards](docs/media/pet-postcards.png) |
+| **He mirrors your call.** Teams says `call=1` → headset. Mic live → green sound arcs. Mic muted → a red zipper across his grille. You glance at the *pet* to know if you're muted. Overlays, not new frames: three 64px PNGs stacked on the sprite on every surface | **He has a life when you don't.** Away 30 minutes and the sprite becomes an empty dock with a note. Come home and he's written a postcard about his day and brought back a souvenir ("a garage bolt"). Three kept, newest first |
+| ![Pip speaks](docs/media/pet-speaks.png) | ![Empty pod](docs/media/pet-trip.png) |
+| **He speaks.** A line in a bubble, written by `llama3.2:3b` on the workstation from what the panel already knows — sessions waiting, next meeting, weather, his own mood. Template lines when the workstation is off, one line per ten minutes at most. The panel only *asks*; HA picks the voice | **Time-lapse.** Every ten minutes HA fetches `/screenshot`, keeps a 240px frame, and stitches the day into a GIF at 23:30. The panel photographs itself. Frames skip while the PC is locked |
+
+The pieces: `tools/make-pet-extras.py` draws the overlays and the pod;
+`pip/capture.py` + `pip/stitch.py` are the time-lapse (they run *inside* the
+HA core container via `shell_command` — Python and Pillow are already there);
+the voice is one `rest_command` to Ollama and one script with a template
+fallback, in the HA package.
+
 Every one of those choices has a reason, in
 [`docs/desk-pet/`](docs/desk-pet/).
 
@@ -295,8 +313,9 @@ homeassistant/packages/
   desk_pet.yaml              helpers, decay gates, XP automations, powers
   desk_pet_sudoku_bank.yaml
   desk_pet_sudoku_daily.yaml
-tools/                       sprite and puzzle generators
-images/pet/                  the eight sprites, 64x64 PNG
+tools/                       sprite, overlay and puzzle generators
+pip/                         time-lapse: capture.py + stitch.py (run inside HA)
+images/pet/                  the eight sprites + call overlays + empty pod, 64x64 PNG
 agent/
   SEED-PROMPT.md             paste into your agent before it touches anything
   skill/SKILL.md             the same, as an installable skill
@@ -364,7 +383,9 @@ Full page: [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md). Headlines:
   earns from panel touches and games only, so it levels more slowly than the
   curve suggests.
 - **Evolution, modular sprite parts, random power draws and accessories are
-  designed but not built.**
+  designed but not built** in this package. (On my desk, evolution and parts
+  are built; the voice, trips and call overlays too — see the pet section.
+  They are not in `desk-pet.pkg.yaml` yet.)
 - **No sound.** The buzzer is on the RP2040, behind stock firmware.
 
 ## Why
