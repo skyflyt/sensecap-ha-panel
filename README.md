@@ -70,7 +70,17 @@ a climate dial, an energy page with solar and battery, door locks and garage
 doors, media transport, and a set of work controls. **Those pages are not in
 this repo**, because they are welded to my entity ids, my rooms and my
 hardware, and publishing them would be publishing my house rather than a
-project.
+project. They are, however, worth seeing — this is what the patterns in this
+repo build up to:
+
+| | |
+|---|---|
+| ![Climate page](docs/media/climate.png) | ![Security page](docs/media/security.png) |
+| **Climate** — one dial, current + outside temp, three modes. The most-used page on the panel | **Security** — locks are tap-to-lock, **long-press to unlock**; garage doors are long-press only |
+| ![Office page](docs/media/office.png) | ![Teams page](docs/media/teams.png) |
+| **Office** — lights, scenes, blinds, TV, media transport | **Teams** — the page that got the screen out of the drawer: mic, camera, share, hand, leave |
+| ![TV remote](docs/media/remote.png) | ![TV apps](docs/media/apps.png) |
+| A sub-page done plainly: a D-pad remote off the Office page | The app launcher, another sub-page — names, not reverse-DNS ids |
 
 What is here is the part that transfers:
 
@@ -82,7 +92,7 @@ What is here is the part that transfers:
   tile and nav styles, sub-pages, optimistic tiles, two-stage ambient idle, the
   encoded-state sensor, and a status badge that does not lie.
 - **A complete worked page: the desk pet.** In full, with its Home Assistant
-  package, its sprites and its seven games, because it is self-contained and it
+  package, its sprites and its games, because it is self-contained and it
   exercises every pattern above at once.
 
 ## What you need
@@ -204,9 +214,27 @@ sounds, and no sad text. It has no route to your attention that you did not
 open yourself.
 
 At level 3 it unlocks a power, then another at 4, 5 and 6. A power is a button
-that does something you could already do by hand. Eight minigames: catch the
-pet, echo, spot the odd one out, a flappy-style jetpack game, peg solitaire,
-lights out, memory pairs, and a daily sudoku with a generated puzzle bank.
+that does something you could already do by hand:
+
+![Powers page](docs/media/pet-powers.png)
+
+*Two unlocked at level 4, two still earning. A power never sends, deletes,
+moves or spends anything.*
+
+Eight minigames: catch the pet, echo, spot the odd one out, a flappy-style
+jetpack game, peg solitaire, lights out, memory pairs, and a daily sudoku with
+a generated puzzle bank. All eight, on the glass:
+
+| | |
+|---|---|
+| ![Catch](docs/media/game-catch.png) | ![Echo](docs/media/game-echo.png) |
+| **Catch** — he hops, you tap. Ten seconds a round | **Echo** — watch the pads, play them back |
+| ![Spot](docs/media/game-spot.png) | ![Pegs](docs/media/game-pegs.png) |
+| **Spot** — find the odd one before the clock does | **Peg solitaire** — untimed, fourteen to one |
+| ![Lights Out](docs/media/game-lightsout.png) | ![Memory](docs/media/game-memory.png) |
+| **Lights Out** — the 1995 classic, 5x5 | **Memory** — eight pairs, counted in flips |
+| ![Sudoku](docs/media/game-sudoku.png) | ![Jet](docs/media/jet-ready.png) |
+| **Sudoku** — a daily puzzle from a generated bank, three difficulties, pencil marks | **Jet** — tap to thrust (mid-flight shot at the top of this page) |
 
 On my desk the pet has since grown well past what this repo ships — a
 procedurally-drawn robot with fifty-odd animation frames (blink, wave, droop
