@@ -1,0 +1,635 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Desk Pet — Home Assistant package
+#
+# Install as /homeassistant/packages/desk_pet.yaml and make sure your
+# configuration.yaml has:
+#
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# HA holds the brain; the panel is the face. Nothing about the pet's state
+# lives in the ESPHome image, because reflashing is routine and NVS is not a
+# database. Lose the panel and the pet keeps its level.
+#
+# ⚠️ EVERY `CHANGE_ME_` ENTITY BELOW IS A PLACEHOLDER FROM SOMEONE ELSE'S HOUSE.
+#    Grep for CHANGE_ME before you install this. They all belong to the decay
+#    pause gates and the four powers, and they are ALL optional — a gate whose
+#    entity does not exist simply never pauses decay, and a power whose switch
+#    does not exist does nothing when tapped. The pet hatches, levels, decays
+#    and plays without any of them. Wire them up one at a time, afterwards.
+#
+# ⚠️ SEED THE SETTINGS ON FIRST INSTALL. See the block under `# SETTINGS`
+#    below. None of them carry `initial:`, on purpose, and the cost is that a
+#    fresh install starts with `pet_enabled: off` — the pet is disabled and
+#    earning nothing until you turn it on.
+#
+# Keep this as a SEPARATE package from anything else you run, so a mistake here
+# cannot take down a working panel config.
+# ─────────────────────────────────────────────────────────────────────────────
+
+input_number:
+  pet_xp:
+    name: Pet XP
+    min: 0
+    max: 999999
+    step: 1
+    mode: box
+    icon: mdi:star-four-points
+  pet_level:
+    name: Pet Level
+    min: 1
+    max: 8          # slice 1 = Form 1 only; progression raises this
+    step: 1
+    mode: box
+    icon: mdi:chevron-triple-up
+  pet_hunger:
+    name: Pet Hunger
+    min: 0          # 0 = fed
+    max: 100
+    step: 0.1
+    mode: box
+    icon: mdi:food-drumstick
+  # Second need, added 2026-08-25. Hunger is about care; SPIRIT is about
+  # attention — it only rises from playing, so a pet that is fed and ignored
+  # still fades. 100 = happy, and it decays SLOWER than hunger (72h vs 48h) so
+  # the two needs never both go hollow on the same day.
+  pet_spirit:
+    name: Pet Spirit
+    min: 0
+    max: 100
+    step: 0.1
+    mode: box
+    icon: mdi:heart-pulse
+
+  # ── SETTINGS ───────────────────────────────────────────────────────────────
+  #
+  # ⚠️ SEED THESE ON FIRST INSTALL. None of them carry `initial:`, deliberately:
+  # `initial` overrides the restored value on EVERY Home Assistant restart,
+  # which is right for a scratch counter and wrong for a user setting — it would
+  # silently undo Skylar's choices every reboot. The cost is that a fresh
+  # install starts at min/off, and `pet_enabled: off` means the pet is disabled
+  # and earning nothing. Seed once:
+  #
+  #   pet_spirit 85 · pet_cap_games 40 · pet_cap_panel 45
+  #   pet_decay_hunger 0.13 · pet_decay_spirit 0.09
+  #   pet_enabled / pet_pause_* (incl. pet_pause_away) / pet_show_on_main -> on
+  #   pet_game_length -> Normal
+  # Every dial is an HA entity rather than a constant in a template, so they are
+  # tunable from the panel, a dashboard, an automation or a voice command
+  # without a reflash. The panel exposes the ones that suit a fingertip; the
+  # rest live in HA, which is the point of putting the brain there.
+  pet_cap_games:
+    name: Pet Setting - Daily game XP cap
+    min: 0
+    max: 200
+    step: 5
+    mode: slider
+    icon: mdi:controller
+  pet_cap_panel:
+    name: Pet Setting - Daily panel XP cap
+    min: 0
+    max: 200
+    step: 5
+    mode: slider
+    icon: mdi:gesture-tap
+  pet_decay_hunger:
+    name: Pet Setting - Hunger per 15min
+    min: 0
+    max: 1
+    step: 0.01
+    mode: slider
+    icon: mdi:food-drumstick
+  pet_decay_spirit:
+    name: Pet Setting - Spirit per 15min
+    min: 0
+    max: 1
+    step: 0.01
+    mode: slider
+    icon: mdi:heart-pulse
+
+  pet_taps_today:
+    name: Pet Panel Taps Today
+    min: 0
+    max: 999
+    step: 1
+    mode: box
+    icon: mdi:gesture-tap
+  # XP taken from minigames today, capped at 40. Games contribute to progress
+  # (Skylar's ask) but must never out-earn the real work signals — a pet whose
+  # level says "I played a lot" instead of "I did a lot" is a different, worse
+  # toy. Work gives ~34-50/day; this ceiling keeps games the junior partner.
+  pet_games_today:
+    name: Pet Game XP Today
+    min: 0
+    max: 999
+    step: 1
+    mode: box
+    icon: mdi:controller
+  # Last panel-touch count already paid for. NOT reset at midnight — it tracks
+  # the device's monotonic counter, which knows nothing about days.
+  pet_touch_base:
+    name: Pet Touch Base
+    min: 0
+    max: 9999999
+    step: 1
+    mode: box
+    icon: mdi:counter
+  # XP the scorer has awarded today from real work signals. Published so the
+  # pet page can show where a day's XP actually came from — the point of the
+  # whole thing is that the number means work, and that is only checkable if
+  # the split is visible.
+  pet_work_today:
+    name: Pet Work XP Today
+    min: 0
+    max: 999
+    step: 1
+    mode: box
+    icon: mdi:briefcase
+
+input_boolean:
+  # Master switch. Off = no decay, no XP, no badge. The pet keeps its level and
+  # everything it has earned; it simply stops participating. This is the "I am
+  # not in the mood for a pet this week" switch, and it exists so the answer to
+  # that feeling is never "delete the thing".
+  pet_enabled:
+    name: Pet Setting - Pet enabled
+    icon: mdi:egg-easter
+  # The three decay pause gates, individually switchable. Defaults on — these
+  # are what stop the pet becoming an obligation, and turning one off should be
+  # a deliberate act rather than something discovered by accident.
+  pet_pause_locked:
+    name: Pet Setting - Pause decay when PC locked
+    icon: mdi:lock
+  pet_pause_meeting:
+    name: Pet Setting - Pause decay in a Teams call
+    icon: mdi:microsoft-teams
+  pet_pause_incident:
+    name: Pet Setting - Pause decay during an incident
+    icon: mdi:alert
+  # The broadest gate of the four, and the one to wire up first if you only
+  # wire up one: are you home at all. The other three ask "are you at the
+  # desk"; this one covers holidays, weekends away and anything else that
+  # takes you out of the house for days. Reads a standard HA `person` entity,
+  # so it needs no extra integration if you already have presence working.
+  pet_pause_away:
+    name: Pet Setting - Pause decay when away from home
+    icon: mdi:home-export-outline
+  # Whether the pet appears on the Main page at all.
+  pet_show_on_main:
+    name: Pet Setting - Show on Main page
+    icon: mdi:home
+
+input_select:
+  pet_game_length:
+    name: Pet Setting - Game length
+    options:
+      - Short
+      - Normal
+      - Long
+    icon: mdi:timer-outline
+
+input_text:
+  pet_name:
+    name: Pet Name
+    max: 16
+    initial: Pip
+
+input_datetime:
+  pet_last_fed:
+    name: Pet Last Fed
+    has_date: true
+    has_time: true
+
+# ── Derived state the panel subscribes to ────────────────────────────────────
+# One encoded sensor, in the panel's existing key=value; convention (the same
+# shape as claudeusage's h5=..;d7=..;msg5=..). One subscription instead of six.
+template:
+  - sensor:
+      - name: "Indicator Pet"
+        unique_id: indicator_pet
+        icon: mdi:egg-easter
+        state: >-
+          {% set xp    = states('input_number.pet_xp')     | float(0) | round(0) | int %}
+          {% set lvl   = states('input_number.pet_level')  | float(1) | round(0) | int %}
+          {% set hun   = states('input_number.pet_hunger') | float(0) %}
+          {#- Level thresholds. L2 lowered 160 -> 60 on 2026-08-24: slice 1 runs
+              on two XP sources (~34/day measured), so a 160 XP hatch was four
+              days of a static egg on day one. Skylar's ask was that *powers*
+              take forever, not the first visual change — L6/Fetch at 1,240 is
+              untouched, and so is everything above L2. -#}
+          {%- set th = [0, 0, 60, 345, 585, 880, 1240, 1660, 2110] -%}
+          {# XP needed to reach the next level, and progress within the band #}
+          {% set nxt   = th[lvl + 1] if lvl < 8 else th[8] %}
+          {% set cur   = th[lvl] %}
+          {% set span  = (nxt - cur) if (nxt - cur) > 0 else 1 %}
+          {% set pct   = (((xp - cur) / span) * 100) | round(0) | int %}
+          {% set pct   = 100 if pct > 100 else (0 if pct < 0 else pct) %}
+          {% set ready = 1 if (lvl < 8 and xp >= nxt) else 0 %}
+          {% set stage = 1 if lvl == 1 else 2 %}
+          {% set spi = states('input_number.pet_spirit') | float(100) %}
+          {% set on = 1 if is_state('input_boolean.pet_enabled','on') else 0 %}
+          xp={{ xp }};lvl={{ lvl }};pct={{ pct }};hun={{ hun | round(0) | int }};rdy={{ ready }};stg={{ stage }};nxt={{ nxt }};spi={{ spi | round(0) | int }};on={{ on }}
+
+      # The well-tended bonus, as a number the scorer can read and multiply by.
+      # Kept as its own entity rather than buried in the scorer so the reason a
+      # day earned what it earned is inspectable after the fact.
+      #
+      # 1.25x when BOTH needs are in good shape. There is deliberately no
+      # multiplier below 1.0 anywhere in this design: care is rewarded, neglect
+      # simply is not rewarded. A pet that punishes you for a bad week is the
+      # failure mode the whole thing was built to avoid.
+      - name: "Indicator Pet Multiplier"
+        unique_id: indicator_pet_multiplier
+        icon: mdi:multiplication
+        state: >-
+          {% if not is_state('input_boolean.pet_enabled','on') %}0.0
+          {% elif (states('input_number.pet_hunger')|float(0)) < 30
+                  and (states('input_number.pet_spirit')|float(100)) > 60 %}1.25
+          {% else %}1.0{% endif %}
+
+      # Settings, encoded for the panel in the same key=value; convention as
+      # everything else. One subscription instead of eight.
+      # NOTE: `pet_pause_away` is deliberately NOT in this string. The panel's
+      # settings page renders a fixed set of toggles from these keys, so adding
+      # one here without also adding a widget would encode a value nothing
+      # reads. Away is a set-once gate that belongs in Home Assistant rather
+      # than under a fingertip. If you want it on the panel, add `aw=` here,
+      # a toggle to `page_pet_settings`, and a line to `refresh_pet_settings` —
+      # all three, or none.
+      - name: "Indicator Pet Settings"
+        unique_id: indicator_pet_settings
+        icon: mdi:cog
+        state: >-
+          {% set b = {'on': 1, 'off': 0} %}
+          en={{ b.get(states('input_boolean.pet_enabled'), 1) }};lk={{ b.get(states('input_boolean.pet_pause_locked'), 1) }};mt={{ b.get(states('input_boolean.pet_pause_meeting'), 1) }};ic={{ b.get(states('input_boolean.pet_pause_incident'), 1) }};mn={{ b.get(states('input_boolean.pet_show_on_main'), 1) }};gl={{ {'Short': 8, 'Normal': 12, 'Long': 20}.get(states('input_select.pet_game_length'), 12) }};cg={{ states('input_number.pet_cap_games')|float(40)|round(0)|int }};cp={{ states('input_number.pet_cap_panel')|float(45)|round(0)|int }}
+
+      - name: "Indicator Pet Mood"
+        unique_id: indicator_pet_mood
+        icon: mdi:emoticon-happy-outline
+        state: >-
+          {% set hun = states('input_number.pet_hunger') | float(0) %}
+          {% if is_state('sensor.CHANGE_ME_pc_session_state','Locked') %}resting
+          {% elif hun < 25 %}content
+          {% elif hun < 60 %}peckish
+          {% else %}hungry{% endif %}
+
+# ── Scripts the panel calls ──────────────────────────────────────────────────
+script:
+  # Feed. Zeroes hunger, stamps the time. 4h cooldown so it stays a small
+  # ritual rather than a button to mash.
+  indicator_pet_feed:
+    alias: Indicator Pet - Feed
+    icon: mdi:food-apple
+    mode: single
+    sequence:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ (as_timestamp(now()) -
+                      as_timestamp(states('input_datetime.pet_last_fed'), 0)) > 14400 }}
+            sequence:
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_hunger }
+                data: { value: 0 }
+              - action: input_datetime.set_datetime
+                target: { entity_id: input_datetime.pet_last_fed }
+                data: { timestamp: "{{ as_timestamp(now()) }}" }
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_xp }
+                data:
+                  value: "{{ [ (states('input_number.pet_xp')|float(0)) + 2, 999999 ] | min }}"
+
+  # Train — the deliberate act of levelling. Only commits when XP has actually
+  # crossed the threshold; evolution is something he does and watches, not
+  # something that happened while he was in a meeting.
+  indicator_pet_train:
+    alias: Indicator Pet - Train
+    icon: mdi:dumbbell
+    mode: single
+    sequence:
+      - variables:
+          lvl: "{{ states('input_number.pet_level') | float(1) | round(0) | int }}"
+          xp:  "{{ states('input_number.pet_xp')    | float(0) }}"
+          # Must stay identical to the template sensor's list above.
+          th:  [0, 0, 60, 345, 585, 880, 1240, 1660, 2110]
+      - condition: template
+        value_template: "{{ lvl < 8 and xp >= th[lvl + 1] }}"
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_level }
+        data: { value: "{{ lvl + 1 }}" }
+
+  # Called once by the panel at the end of a catch-the-pet round. The whole
+  # game runs on the ESP32; this is the only HA involvement.
+  #
+  # Playing lowers hunger (a played-with pet is a content one) and pays XP
+  # scaled by score, capped so the minigame can never out-earn real work — 8 XP
+  # is a quarter of a typical day's two-source total, which is a nice reward
+  # and a terrible farm. There is deliberately NO penalty for a low score.
+  indicator_pet_played:
+    alias: Indicator Pet - Played
+    icon: mdi:controller
+    mode: queued
+    max: 5
+    fields:
+      score:
+        description: Round score, already normalised on the device so a good round is ~12 in every game
+        example: 12
+      game:
+        description: 1 = Catch, 2 = Echo, 3 = Spot
+        example: 1
+    sequence:
+      - variables:
+          # score/2, capped at 12 per round. Skylar asked that play "help
+          # progress too" — it now pays roughly a third of a typical work day
+          # per good round, which is worth playing for and useless to grind
+          # against the daily cap below.
+          raw: "{{ [ ((score | int(0)) / 2) | round(0) | int, 12 ] | min }}"
+          room: >-
+            {{ [ (states('input_number.pet_cap_games')|float(40)|int)
+                 - (states('input_number.pet_games_today') | float(0) | int), 0 ] | max }}
+          gained: "{{ [ raw, room ] | min }}"
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_xp }
+        data:
+          value: "{{ [ (states('input_number.pet_xp')|float(0)) + gained, 999999 ] | min }}"
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_games_today }
+        data:
+          value: "{{ (states('input_number.pet_games_today')|float(0)) + gained }}"
+      # Playing is worth ~15 points of hunger and a big lift to spirit. NEITHER
+      # is capped — care must always work even after the XP allowance is gone,
+      # or the last game of the day would stop meaning anything to the pet.
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_hunger }
+        data:
+          value: "{{ [ (states('input_number.pet_hunger')|float(0)) - 15, 0 ] | max }}"
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_spirit }
+        data:
+          value: "{{ [ (states('input_number.pet_spirit')|float(100)) + 25, 100 ] | min }}"
+      - action: logbook.log
+        data:
+          name: Pet
+          message: >-
+            played {{ {1:'Catch',2:'Echo',3:'Spot',4:'Pegs',5:'Lights Out',6:'Memory',7:'Sudoku'}.get(game|int(1),'?') }}
+            — score {{ score }}, +{{ gained }} xp
+            ({{ (states('input_number.pet_games_today')|float(0)|int) }}/40 today)
+
+  # ── POWERS ─────────────────────────────────────────────────────────────────
+  # Every one of these is built from a HASS.Agent command that ALREADY EXISTS
+  # and already works. None of them is a new capability. The pet is a new way
+  # to reach things I could already do by hand, which is the rule I hold myself to:
+  # a power should be a shortcut, never something novel and risky. If you are
+  # adapting these, keep the rule. A toy that can do something you cannot
+  # easily undo is not a toy.
+  #
+  # Unlocked by level, and the panel hides a locked power rather than showing a
+  # button that refuses. Gates: L3 Tidy, L4 Den, L5 Doctor, L6 Fetch.
+
+  # L3 — TIDY. Both mark-as-read sweeps, back to back. These are the
+  # carve-out-approved ones are mark-read only and carry their own protect lists
+  # evaluated first, and they cannot do anything the sweeps could not already
+  # do on their own. That is exactly why this is the safe power to hand a toy.
+  indicator_pet_tidy:
+    alias: Indicator Pet - Tidy
+    icon: mdi:broom
+    mode: single
+    sequence:
+      - action: switch.turn_on
+        target: { entity_id: switch.CHANGE_ME_tidy_action_a }
+      - delay: { seconds: 2 }
+      - action: switch.turn_on
+        target: { entity_id: switch.CHANGE_ME_tidy_action_b }
+
+  # L4 — DEN. The deep-work macro: lights down, mic muted, media paused.
+  # Mic is a TOGGLE on the Windows side, so this only fires it when the mic is
+  # actually live — a "mute" button that unmutes you is worse than no button.
+  indicator_pet_den:
+    alias: Indicator Pet - Den
+    icon: mdi:home-lightbulb
+    mode: single
+    sequence:
+      - action: light.turn_off
+        target:
+          entity_id:
+            - light.CHANGE_ME_primary
+            - light.CHANGE_ME_accent
+      - if:
+          - condition: template
+            value_template: "{{ is_state('sensor.CHANGE_ME_mic_active','1') }}"
+        then:
+          - action: switch.turn_on
+            target: { entity_id: switch.CHANGE_ME_mic_toggle }
+      - if:
+          - condition: template
+            value_template: "{{ is_state('media_player.CHANGE_ME_media','playing') }}"
+        then:
+          - action: media_player.media_pause
+            target: { entity_id: media_player.CHANGE_ME_media }
+
+  # L5 — DOCTOR. Runs a panel health-check script on the PC.
+  #
+  # NAMED "Doctor", NOT "Sentry", on purpose. The design's Sentry is
+  # a connectivity check plus a panel health check, and the connectivity half
+  # is NOT built: there is no command for it yet and adding one means editing a
+  # config that a lot of other things depend on. Half a power under an honest name
+  # beats a full name over half a power. The other half arrives when the command exists.
+  indicator_pet_doctor:
+    alias: Indicator Pet - Doctor
+    icon: mdi:stethoscope
+    mode: single
+    sequence:
+      - action: switch.turn_on
+        target: { entity_id: switch.CHANGE_ME_doctor_action }
+
+  # FETCH — the level-6 power. Answers "which of my four things is shouting at
+  # me" and focuses the loudest. If everything is quiet it says so rather than
+  # opening something at random.
+  indicator_pet_fetch:
+    alias: Indicator Pet - Fetch
+    icon: mdi:magnet
+    mode: single
+    sequence:
+      - variables:
+          cl: "{{ states('sensor.CHANGE_ME_agent_attention_count') | int(0) }}"
+          cx: "{{ 1 if is_state('input_boolean.CHANGE_ME_agent2_attention','on') else 0 }}"
+          tm: >-
+            {{ 1 if 'call=1' in states('sensor.CHANGE_ME_meeting_state') else 0 }}
+          vip: >-
+            {% set s = states('sensor.CHANGE_ME_mail_state') %}
+            {% set m = s.split('vip=')[1].split(';')[0] if 'vip=' in s else '0' %}
+            {{ m | int(0) }}
+      - choose:
+          # A live Teams call outranks everything.
+          - conditions: "{{ tm > 0 }}"
+            sequence:
+              - action: script.CHANGE_ME_focus_meeting
+          - conditions: "{{ cl >= 1 and cl >= vip }}"
+            sequence:
+              - action: script.CHANGE_ME_focus_agent
+          - conditions: "{{ vip > 0 }}"
+            sequence:
+              - action: script.CHANGE_ME_focus_mail
+          - conditions: "{{ cx > 0 }}"
+            sequence:
+              - action: script.CHANGE_ME_focus_agent2
+
+automation:
+  # ── Decay ──────────────────────────────────────────────────────────────────
+  # Every 15 minutes, hunger +0.13 => 0 to 100 over ~48h of neglect.
+  # Decay is what makes it a pet rather than a progress bar; the PAUSE GATES
+  # are what stop it becoming an obligation. Weekends, PTO, a 2am outage and a
+  # bad Tuesday all cost nothing.
+  - id: indicator_pet_decay
+    alias: "Indicator Pet - decay"
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/15"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.pet_enabled
+        state: "on"
+      # Each gate is individually switchable in settings. The condition reads
+      # "the gate is off, OR the gate is on and the thing is not happening" —
+      # so turning a gate off makes decay continue through that state rather
+      # than disabling decay.
+      #
+      # ── AWAY FROM HOME ────────────────────────────────────────────────────
+      # ⚠️ THIS IS THE GATE TO WIRE UP FIRST. It is one line and it is the
+      #    difference between a pet and an obligation.
+      #
+      # `person.CHANGE_ME_you` is a standard Home Assistant person entity —
+      # the thing your phone's HA app already updates. Swap in yours; it will
+      # be `person.<your first name>` or whatever you named it under
+      # Settings > People. Nothing else needs to change.
+      #
+      # The other three gates ask "are you at the desk". This one asks "are
+      # you in the building", so it covers the week away that the desk-level
+      # gates cannot see. `not_home` is HA's own state string; anything that
+      # is not `not_home` (home, or any named zone) counts as present.
+      #
+      # If you have no presence set up, leave the placeholder. The gate
+      # evaluates to "the entity is not not_home", an unknown entity is not
+      # `not_home`, and decay simply continues as if the gate were off.
+      - condition: template
+        value_template: >-
+          {{ is_state('input_boolean.pet_pause_away','off')
+             or not is_state('person.CHANGE_ME_you','not_home') }}
+      - condition: template
+        value_template: >-
+          {{ is_state('input_boolean.pet_pause_locked','off')
+             or not is_state('sensor.CHANGE_ME_pc_session_state','Locked') }}
+      - condition: template
+        value_template: >-
+          {{ is_state('input_boolean.pet_pause_locked','off')
+             or is_state('sensor.CHANGE_ME_monitor_power','PowerOn') }}
+      - condition: template
+        value_template: >-
+          {{ is_state('input_boolean.pet_pause_meeting','off')
+             or 'call=1' not in states('sensor.CHANGE_ME_meeting_state') }}
+      - condition: template
+        value_template: >-
+          {% set s = states('sensor.CHANGE_ME_incident_state') %}
+          {% set h = s.split('hot=')[1].split(';')[0] if 'hot=' in s else '0' %}
+          {{ is_state('input_boolean.pet_pause_incident','off') or (h | int(0) == 0) }}
+    actions:
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_hunger }
+        data:
+          value: >-
+            {{ [ (states('input_number.pet_hunger')|float(0))
+                 + (states('input_number.pet_decay_hunger')|float(0.13)), 100 ] | min }}
+      # Spirit falls as well as hunger rising, but slower. Feeding does not fix
+      # it — only playing does. That is the whole reason it exists: it is the
+      # need that cannot be satisfied by a four-hour ritual.
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_spirit }
+        data:
+          value: >-
+            {{ [ (states('input_number.pet_spirit')|float(100))
+                 - (states('input_number.pet_decay_spirit')|float(0.09)), 0 ] | max }}
+
+  # ── XP from using the panel ────────────────────────────────────────────────
+  # "usage of the screen itself should also add XP to a certain extent each
+  # day, similar to the play mode" — Skylar, 2026-08-25.
+  #
+  # REPLACED the original, which triggered on `call_service` for
+  # `script.indicator_*`. That worked (4 taps counted on the day it was
+  # replaced) but only ever saw the buttons that reach out to the PC — every
+  # nav tab, sub-page and Back button was invisible to it. This awards on the
+  # DELTA of a device-side touch counter instead, so it sees every touch.
+  #
+  # 1 XP per 3 touches, 20/day. The remainder is carried rather than discarded:
+  # the base advances by exactly the touches paid for, so two touches now and
+  # one later still earn.
+  - id: indicator_pet_panel_xp
+    alias: "Indicator Pet - XP from panel use"
+    mode: queued
+    max: 10
+    triggers:
+      - trigger: state
+        entity_id: sensor.CHANGE_ME_pet_panel_touches
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ trigger.to_state.state not in ['unknown','unavailable','none',None] }}
+    actions:
+      - variables:
+          cur: "{{ trigger.to_state.state | float(0) | round(0) | int }}"
+          base: "{{ states('input_number.pet_touch_base') | float(0) | round(0) | int }}"
+      - choose:
+          # The device rebooted or was reflashed — its counter restarted from
+          # zero. Re-baseline and award nothing. Without this the next delta is
+          # negative and the whole thing quietly stops paying out.
+          - conditions: "{{ cur < base }}"
+            sequence:
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_touch_base }
+                data: { value: "{{ cur }}" }
+          - conditions: >-
+              {{ (cur - base) >= 3 and is_state('input_boolean.pet_enabled','on') }}
+            sequence:
+              - variables:
+                  # Fallback raised 20 -> 45 on 2026-08-28. Measured: the cap was
+                  # pinned at 20/20 well before mid-morning, with a day's worth of touches sitting
+                  # unpaid in the bank, so panel use was the binding constraint on
+                  # progression, not a contributor to it. Panel demand runs ~65
+                  # XP/day of raw touches; 45 pays most of a heavy day and still
+                  # leaves a ceiling so it cannot be farmed without limit.
+                  paid: >-
+                    {{ [ ((cur - base) / 3) | int,
+                         [ (states('input_number.pet_cap_panel')|float(45)|int)
+                           - (states('input_number.pet_taps_today')|float(0)|int), 0 ] | max ] | min }}
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_xp }
+                data:
+                  value: "{{ [ (states('input_number.pet_xp')|float(0)) + paid, 999999 ] | min }}"
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_taps_today }
+                data:
+                  value: "{{ (states('input_number.pet_taps_today')|float(0)) + paid }}"
+              # Advance the base by what was PAID FOR, not by everything seen.
+              # When the daily cap bites, the unpaid touches stay banked and
+              # are honoured tomorrow rather than silently thrown away.
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_touch_base }
+                data: { value: "{{ base + (paid * 3) }}" }
+
+  - id: indicator_pet_tap_reset
+    alias: "Indicator Pet - reset daily tap cap"
+    mode: single
+    triggers:
+      - trigger: time
+        at: "00:00:00"
+    actions:
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_taps_today }
+        data: { value: 0 }
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_games_today }
+        data: { value: 0 }
+      - action: input_number.set_value
+        target: { entity_id: input_number.pet_work_today }
+        data: { value: 0 }

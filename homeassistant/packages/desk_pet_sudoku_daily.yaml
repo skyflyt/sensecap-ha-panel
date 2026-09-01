@@ -1,0 +1,164 @@
+# Desk pet — Sudoku DAILIES, badges and awards.
+# Install as /homeassistant/packages/desk_pet_sudoku_daily.yaml
+#
+# Three fresh puzzles a day, one per difficulty, generated on the workstation by
+# a small nightly script on the PC (not in this repo) and
+# pushed here. Skylar asked for "one puzzle for each level each day that is new
+# and unique" — a shipped bank cannot be that, since a 12-puzzle bank repeats
+# after 12 days.
+#
+# Each daily entity holds puzzle+solution as one 162-character string, because
+# an input_text caps at 255 and two 81-char grids fit in one entity where six
+# separate ones would be six things to keep in step.
+#
+# The static bank in desk_pet_sudoku_bank.yaml stays as the FALLBACK: if the
+# PC has been off and no daily has landed, the page still deals a puzzle rather
+# than showing an empty grid.
+
+input_text:
+  pet_sud_daily_e: { name: Pet Sudoku - Daily Easy, max: 162 }
+  pet_sud_daily_m: { name: Pet Sudoku - Daily Medium, max: 162 }
+  pet_sud_daily_h: { name: Pet Sudoku - Daily Hard, max: 162 }
+  pet_sud_date:    { name: Pet Sudoku - Daily date, max: 12 }
+  # Which difficulties are finished today, as letters: "-" none, "em" = Easy
+  # and Medium done. Reset by the daily generator.
+  pet_sud_done:    { name: Pet Sudoku - Done today, max: 8 }
+  # One saved board per difficulty, so switching level does not throw away the
+  # grid you were part-way through.
+  pet_sudoku_state_e: { name: Pet Sudoku - Board Easy, max: 81 }
+  pet_sudoku_state_m: { name: Pet Sudoku - Board Medium, max: 81 }
+  pet_sudoku_state_h: { name: Pet Sudoku - Board Hard, max: 81 }
+
+input_number:
+  # LIFETIME counts, and deliberately not a streak. The pet's design rules out
+  # streaks outright — a streak exists to make stopping feel bad, and this pet
+  # is not allowed to do that. A cumulative tally only ever goes up, so missing
+  # a week costs nothing and the badge still means something.
+  pet_sud_solved_e: { name: Pet Sudoku - Easy solved, min: 0, max: 99999, step: 1, mode: box, icon: "mdi:numeric-1-circle" }
+  pet_sud_solved_m: { name: Pet Sudoku - Medium solved, min: 0, max: 99999, step: 1, mode: box, icon: "mdi:numeric-2-circle" }
+  pet_sud_solved_h: { name: Pet Sudoku - Hard solved, min: 0, max: 99999, step: 1, mode: box, icon: "mdi:numeric-3-circle" }
+
+template:
+  - sensor:
+      # Today's puzzle at the selected difficulty, falling back to the static
+      # bank when no daily has been published.
+      # ⚠️ unique_id is deliberately the ORIGINAL `pet_sudoku_puzzle`, not a new
+      # one. The bank package used to own that unique_id; renaming the bank's to
+      # `pet_sudoku_bank_puzzle` orphaned the registry entry holding
+      # `sensor.pet_sudoku_puzzle`, so a NEW unique_id here landed as
+      # `sensor.pet_sudoku_puzzle_2` while the base id sat unavailable — and the
+      # panel, which reads the base id, saw nothing. Inheriting the old
+      # unique_id rebinds the existing entity instead of squatting beside it,
+      # and needs no reflash. Same failure class as the panel-touch sensor.
+      - name: "Pet Sudoku Puzzle"
+        unique_id: pet_sudoku_puzzle
+        icon: mdi:grid
+        state: >-
+          {% set k = {'Easy':'e','Medium':'m','Hard':'h'}.get(states('input_select.pet_sudoku_difficulty'),'e') %}
+          {% set blob = states('input_text.pet_sud_daily_' ~ k) %}
+          {% if blob is string and blob | length >= 162 and states('input_text.pet_sud_date') == now().date().isoformat() %}
+            {{ blob[:81] }}
+          {% else %}
+            {{ states('sensor.pet_sudoku_bank_puzzle') }}
+          {% endif %}
+
+      - name: "Pet Sudoku Solution"
+        unique_id: pet_sudoku_solution
+        icon: mdi:grid-off
+        state: >-
+          {% set k = {'Easy':'e','Medium':'m','Hard':'h'}.get(states('input_select.pet_sudoku_difficulty'),'e') %}
+          {% set blob = states('input_text.pet_sud_daily_' ~ k) %}
+          {% if blob is string and blob | length >= 162 and states('input_text.pet_sud_date') == now().date().isoformat() %}
+            {{ blob[81:162] }}
+          {% else %}
+            {{ states('sensor.pet_sudoku_bank_solution') }}
+          {% endif %}
+
+      # The board for the current difficulty — the panel reads this one and
+      # writes back to the matching input_text.
+      - name: "Pet Sudoku Board"
+        unique_id: pet_sudoku_board
+        icon: mdi:grid-large
+        state: >-
+          {% set k = {'Easy':'e','Medium':'m','Hard':'h'}.get(states('input_select.pet_sudoku_difficulty'),'e') %}
+          {{ states('input_text.pet_sudoku_state_' ~ k) }}
+
+      # Everything the panel needs about dailies and badges, in the panel's
+      # usual key=value; encoding. One subscription instead of eight.
+      #   dly=1 when today's puzzles are live · dn=1 this level already done
+      #   se/sm/sh = lifetime solves · xp = what finishing this level pays
+      - name: "Pet Sudoku Meta"
+        unique_id: pet_sudoku_meta
+        icon: mdi:information-outline
+        state: >-
+          {% set k = {'Easy':'e','Medium':'m','Hard':'h'}.get(states('input_select.pet_sudoku_difficulty'),'e') %}
+          {% set fresh = 1 if states('input_text.pet_sud_date') == now().date().isoformat() else 0 %}
+          {% set done = 1 if k in (states('input_text.pet_sud_done') | lower) else 0 %}
+          {% set pay = {'e':8,'m':15,'h':25}.get(k,8) %}
+          dly={{ fresh }};dn={{ done }};se={{ states('input_number.pet_sud_solved_e')|float(0)|int }};sm={{ states('input_number.pet_sud_solved_m')|float(0)|int }};sh={{ states('input_number.pet_sud_solved_h')|float(0)|int }};xp={{ pay }}
+
+script:
+  # Called by the panel when a grid is completed correctly.
+  #
+  # DAILY COMPLETIONS BYPASS THE GAMES CAP, on purpose. The cap exists to stop
+  # a minigame being farmed; a daily cannot be farmed, because there are exactly
+  # three a day and each can only be claimed once. Making them fight the same
+  # 40/day budget as Catch would mean the reward for 30 minutes of Hard sudoku
+  # was frequently zero, which is worse than not offering it.
+  # Easy 8 / Medium 15 / Hard 25 — harder is worth more, as asked.
+  indicator_pet_sudoku_solved:
+    alias: Indicator Pet - Sudoku solved
+    icon: mdi:trophy
+    mode: single
+    sequence:
+      - variables:
+          k: >-
+            {{ {'Easy':'e','Medium':'m','Hard':'h'}.get(states('input_select.pet_sudoku_difficulty'),'e') }}
+          fresh: >-
+            {{ states('input_text.pet_sud_date') == now().date().isoformat() }}
+          done: >-
+            {{ {'Easy':'e','Medium':'m','Hard':'h'}.get(states('input_select.pet_sudoku_difficulty'),'e')
+               in (states('input_text.pet_sud_done') | lower) }}
+          pay: >-
+            {{ {'e':8,'m':15,'h':25}.get(
+                 {'Easy':'e','Medium':'m','Hard':'h'}.get(states('input_select.pet_sudoku_difficulty'),'e'), 8) }}
+      # Lifetime badge count always increments — practice puzzles count towards
+      # the tally even when there is no XP left to pay.
+      - action: input_number.set_value
+        target:
+          entity_id: "input_number.pet_sud_solved_{{ k }}"
+        data:
+          value: "{{ (states('input_number.pet_sud_solved_' ~ k)|float(0)) + 1 }}"
+      - choose:
+          - conditions: "{{ fresh and not done }}"
+            sequence:
+              - action: input_text.set_value
+                target: { entity_id: input_text.pet_sud_done }
+                data:
+                  value: >-
+                    {% set cur = states('input_text.pet_sud_done') | lower %}
+                    {{ (cur if cur not in ['-','unknown','unavailable',''] else '') ~ k }}
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_xp }
+                data:
+                  value: "{{ [ (states('input_number.pet_xp')|float(0)) + (pay|int), 999999 ] | min }}"
+              - action: input_number.set_value
+                target: { entity_id: input_number.pet_spirit }
+                data:
+                  value: "{{ [ (states('input_number.pet_spirit')|float(100)) + 20, 100 ] | min }}"
+              - action: logbook.log
+                data:
+                  name: Pet
+                  message: >-
+                    solved today's {{ states('input_select.pet_sudoku_difficulty') }}
+                    sudoku — +{{ pay }} xp (daily, outside the games cap)
+          # Already claimed today, or a fallback-bank puzzle. Still counts on the
+          # badge, pays nothing. Silent about it rather than scolding.
+          - conditions: "{{ true }}"
+            sequence:
+              - action: logbook.log
+                data:
+                  name: Pet
+                  message: >-
+                    solved a {{ states('input_select.pet_sudoku_difficulty') }} sudoku
+                    (practice — today's already claimed)

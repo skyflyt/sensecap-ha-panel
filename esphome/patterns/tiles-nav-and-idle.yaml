@@ -1,0 +1,176 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PATTERN — the panel chrome: tile style, nav bar, sub-pages, optimistic tiles,
+#           two-stage idle
+#
+# The bits every page needs. Copy what you want; none of it depends on the
+# desk pet.
+# ─────────────────────────────────────────────────────────────────────────────
+
+lvgl:
+  bg_color: 0x14161A
+  text_color: 0xE8EAED
+  text_font: montserrat_20
+
+  theme:
+    # Every button dims to 80% while a finger is on it. Universal tactile
+    # feedback with no per-widget wiring, and combined with optimistic tiles
+    # below it is what makes taps feel instant rather than laggy.
+    button:
+      pressed:
+        opa: 80%
+
+  style_definitions:
+    - id: tile
+      bg_color: 0x1E2228
+      bg_opa: COVER
+      radius: 14
+      # A hairline border lifts neutral tiles off the background without
+      # gradients or shadows, which band on RGB565 anyway.
+      border_width: 1
+      border_color: 0x2A2F37
+      pad_all: 10
+      text_font: montserrat_18
+      # ⚠️⚠️ DO NOT DELETE THIS LINE. ⚠️⚠️
+      #
+      # Dark text on a dark tile is invisible, and it is completely convincing
+      # as a data bug. The top-level `text_color` above applies to the SCREEN;
+      # LVGL's default theme then re-asserts a dark text colour on plain `obj`
+      # containers, so any label inside a styled container that does not name
+      # its own colour renders dark-on-dark.
+      #
+      # Button labels are unaffected, which is why one of my pages looked
+      # perfect while another looked like every sensor was broken, and why
+      # comparing them was so confusing. Three wrong diagnoses and an afternoon.
+      #
+      # Setting it on the STYLE means it cannot recur for anything using this
+      # style. A label in a NEW container you define still needs its own.
+      text_color: 0xE8EAED
+
+    - id: tile_on
+      bg_color: 0xF2B01E
+      text_color: 0x14161A
+
+    # Nav tabs. Unselected is flat and transparent so the bar reads as one
+    # surface rather than five separate buttons.
+    - id: nav_tab
+      bg_opa: TRANSP
+      radius: 12
+      border_width: 0
+      pad_all: 0
+      text_color: 0x9AA0A6
+    # Selected is DARKER than the bar it sits in, which is what makes it look
+    # pressed into the surface instead of floating on top of it.
+    - id: nav_tab_on
+      bg_color: 0x14161A
+      bg_opa: COVER
+      radius: 12
+      border_width: 0
+      pad_all: 0
+      text_color: 0xF2B01E
+
+  # ── TWO-STAGE IDLE ─────────────────────────────────────────────────────────
+  # Rather than going straight to black, become a dim ambient clock first. The
+  # panel stays useful at a glance without lighting the room at night.
+  #
+  # Gated on a condition (here: the PC monitor being off) so it never dims
+  # while you are actually sitting there.
+  on_idle:
+    - timeout: !lambda "return 90000;"          # 90 s
+      then:
+        - if:
+            condition:
+              lambda: 'return id(ha_monitor_power).state != "PowerOn";'
+            then:
+              - lvgl.widget.show: ambient_screen
+              - light.turn_on:
+                  id: backlight
+                  brightness: 30%
+    - timeout: !lambda "return 600000;"         # 10 min
+      then:
+        - if:
+            condition:
+              lambda: 'return id(ha_monitor_power).state != "PowerOn";'
+            then:
+              - lvgl.widget.hide: ambient_screen
+              - light.turn_off: backlight
+              - lvgl.pause:
+
+touchscreen:
+  platform: ft5x06
+  id: sensecap_touchscreen
+  transform:
+    mirror_x: true
+    mirror_y: true
+  on_release:
+    # Any touch wakes it. Note the order: resume, redraw, THEN backlight, so
+    # the screen is already painted when the light comes up.
+    - if:
+        condition: lvgl.is_paused
+        then:
+          - lvgl.resume:
+          - lvgl.widget.redraw:
+          - light.turn_on: backlight
+
+# ── NAV BAR ARITHMETIC ───────────────────────────────────────────────────────
+#
+# Five tabs at width 86 is 430px inside a 456px inner bar (pad_all: 6), spread
+# SPACE_EVENLY. A SIXTH tab needs every tab at <= 76px, which reflows the whole
+# bar and shrinks four labels already at montserrat_12.
+#
+# So five is the practical ceiling for top-level pages. Anything else is a
+# SUB-PAGE: no nav tab, reached from a tile on a parent page, with an explicit
+# Back button and an on_load that keeps the parent's tab lit.
+#
+# Vertical: the nav bar starts at y414, so a page owns y0..y404. MEASURE before
+# assuming you have room. I once wrote that a new badge would shift everything
+# down 40px; measuring showed the page had 10px of slack and a 40px shift would
+# have pushed a widget under the nav bar. The badge replaced the page heading
+# instead, which was better anyway because the nav tab already named the page.
+
+script:
+  # Called from every page's on_load with its own index. A sub-page passes its
+  # PARENT's index, so the parent tab stays lit while you are inside it.
+  - id: nav_select
+    mode: restart
+    parameters:
+      idx: int
+    then:
+      - lambda: 'id(nav_idx) = idx;'
+      # Repeat per tab. Note that the label colour is set EXPLICITLY rather
+      # than relying on the style swap: same reason as the `tile` warning
+      # above, and it is cheap insurance.
+      - lvgl.widget.update:
+          id: nav_tab_0
+          state:
+            checked: !lambda return idx == 0;
+      - lvgl.label.update:
+          id: nav_tab_0_lbl
+          # Block scalar, NOT an inline ternary. YAML reads the " : " in
+          # `a ? b : c` as a mapping separator and the file fails to parse.
+          text_color: !lambda |-
+            if (idx == 0) return lv_color_hex(0xF2B01E);
+            return lv_color_hex(0x9AA0A6);
+
+  # ── OPTIMISTIC TILES ───────────────────────────────────────────────────────
+  #
+  # Repaint to the EXPECTED state the instant the control is tapped; the sensor
+  # confirms or corrects within a poll. This is what removes the "did that do
+  # anything?" pause, and on my panel it was worth more than any of the backend
+  # latency work.
+  #
+  # ⚠️ DETERMINISTIC TOGGLES ONLY.
+  #    Do not extend this to anything with a confirmation dialog, anything that
+  #    can fail halfway, or anything whose result depends on remote state. Then
+  #    the panel is confidently showing you something that never happened,
+  #    which is worse than being slow.
+  - id: tap_mic_toggle
+    then:
+      - lvgl.widget.update:
+          id: tile_mic
+          state:
+            checked: !lambda return !id(mic_expected);
+      - lambda: 'id(mic_expected) = !id(mic_expected);'
+      - homeassistant.action:
+          action: switch.turn_on
+          data:
+            entity_id: switch.CHANGE_ME_mic_toggle

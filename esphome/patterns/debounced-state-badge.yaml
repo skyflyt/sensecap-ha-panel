@@ -1,0 +1,113 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PATTERN — a status badge that does not lie
+#
+# Drop-in shape for any "is the thing OK" indicator on the panel: grid up/down,
+# VPN up/down, a server reachable, a door open. Written for a grid/islanding
+# badge and sized from a real 4h50m outage rather than from a datasheet.
+#
+# Four decisions, each of which came from something going wrong. The reasoning
+# is in docs/00-panel-guide.md §4; the short version is in the comments below.
+#
+# Replace `sensor.CHANGE_ME_source` and the two state strings with yours.
+# ─────────────────────────────────────────────────────────────────────────────
+
+globals:
+  # ⚠️ DECISION 3 — the badge paints from THIS, never from the sensor.
+  #
+  # The 30s repaint interval also calls refresh_state_badge. If that painter
+  # read the text_sensor directly it would bypass the debounce entirely and
+  # show every transient anyway. The debounce is the only writer here.
+  #
+  # 0 = unknown · 1 = normal · 2 = alarm
+  - id: state_committed
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+text_sensor:
+  # ⚠️ DECISION 1 — pick the entity that actually CHANGES during the event.
+  #
+  # Two entities looked like the obvious source for this and both read green
+  # for the entire outage. One had changed state exactly once in the whole
+  # window queried, and that was its integration dropping to `unavailable`.
+  #
+  # Wire one of those to a badge and you have an indicator that cannot go red
+  # during the event it exists for. Go and read your candidate's history across
+  # a real occurrence before you trust it. If you have never had one, say so on
+  # the badge rather than assuming.
+  - platform: homeassistant
+    id: ha_state_source
+    entity_id: sensor.CHANGE_ME_source
+    on_value:
+      - script.execute: state_debounce
+
+script:
+  # ⚠️ DECISION 2 — 60s hold before the badge moves.
+  #
+  # The measured outage contained TWO sub-15-second transients. With no hold,
+  # the badge flashes red for five seconds on a Sunday morning and teaches you
+  # to ignore it. A badge you have learned to ignore is worse than no badge.
+  #
+  # `mode: restart` plus a leading delay is the entire mechanism: each new
+  # value restarts the timer, so only a value that survives 60s ever commits.
+  - id: state_debounce
+    mode: restart
+    then:
+      - delay: 60s
+      - lambda: |-
+          if (!id(ha_state_source).has_state()) { id(state_committed) = 0; return; }
+          id(state_committed) = (id(ha_state_source).state == "ALARM_STATE") ? 2 : 1;
+      - script.execute: refresh_state_badge
+
+  - id: refresh_state_badge
+    then:
+      - lvgl.label.update:
+          id: lbl_state_badge
+          # ⚠️ DECISION 4 — the WORD is on the label, not just the colour.
+          #
+          # This panel gets read from across a room, where colour alone fails.
+          # It also fails colour-blind users completely. Costs six characters.
+          text: !lambda |-
+            switch (id(state_committed)) {
+              case 2:  return std::string("GRID  ON BATTERY");
+              case 1:  return std::string("GRID  ON GRID");
+              default: return std::string("GRID  --");
+            }
+          # Block scalar, not an inline ternary: YAML reads the " : " in
+          # `a ? b : c` as a mapping separator and the whole file fails to
+          # parse. This bites once and then you remember it forever.
+          text_color: !lambda |-
+            // Grey for the boring case, NOT green. On-grid is true 99.9% of
+            // the time and a green light that is always green is decoration.
+            if (id(state_committed) == 2) return lv_color_hex(0xFF453A);
+            return lv_color_hex(0x9AA0A6);
+
+interval:
+  # Safe to call on the interval precisely BECAUSE it paints the committed
+  # global. This is the whole reason decision 3 exists.
+  - interval: 30s
+    then:
+      - script.execute: refresh_state_badge
+
+# ── Two more things learned building this ────────────────────────────────────
+#
+# DO NOT FAKE THE STATE TO TEST IT.
+#   The obvious demo is to POST the alarm value to the source entity. Check
+#   what else consumes that entity first. Mine had fifteen references across
+#   four live automation flows, including triggers named "Power outage" and
+#   "Power restored", none disabled. Faking it would have driven real exterior
+#   loads at 21:00 on a Sunday and then fired the restore path when the next
+#   poll corrected it. A demo that drives real hardware is not a demo.
+#
+#   The honest consequence: my alarm rendering is still unverified. That is
+#   recorded in docs/LIMITATIONS.md rather than glossed over. If you need to
+#   prove the red path, temporarily repoint the text_sensor at a scratch entity
+#   and reflash twice.
+#
+# DO NOT REIMPLEMENT A NUMBER THAT ALREADY EXISTS.
+#   My first draft of the runtime readout back-solved a battery capacity
+#   constant and divided by live house load. Home Assistant already had a
+#   runtime-remaining entity, already on a dashboard, and it matched what I
+#   remembered from the outage. A second implementation of a number that
+#   already has one is a second thing to be wrong. Caught mid-compile; that
+#   build was stopped before it flashed.

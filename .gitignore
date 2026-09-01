@@ -1,0 +1,23 @@
+# NEVER COMMIT THESE
+secrets.yaml
+*.secret
+*.pem
+*.key
+
+# ESPHome build output
+.esphome/
+esphome/.esphome/
+*.bin
+*.elf
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

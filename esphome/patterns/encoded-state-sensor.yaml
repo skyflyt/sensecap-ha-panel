@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PATTERN — one encoded sensor instead of nine subscriptions
+#
+# The panel pays a fixed cost per subscribed entity: RAM, plus an API round
+# trip on every push. Nine slow-moving numbers that always change together are
+# ONE fact, not nine.
+#
+# Home Assistant side: one template sensor emitting `key=value;` pairs.
+# Panel side: one text_sensor and a parser in a C++ header.
+#
+# The parser is esphome/desk_pet_helpers.h — copy it, it is 60 lines.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── HOME ASSISTANT SIDE ──────────────────────────────────────────────────────
+#
+# In a package under /homeassistant/packages/:
+#
+#   template:
+#     - sensor:
+#         - name: "Panel Env"
+#           unique_id: panel_env
+#           state: >-
+#             {% set t = states('sensor.CHANGE_ME_indoor_temp') | float(0) %}
+#             {% set o = states('sensor.CHANGE_ME_outdoor_temp') | float(0) %}
+#             {% set h = states('sensor.CHANGE_ME_humidity') | float(0) %}
+#             in={{ t | round(0) | int }};out={{ o | round(0) | int }};hum={{ h | round(0) | int }}
+#
+# ⚠️ A HOME ASSISTANT STATE CAPS AT 255 CHARACTERS.
+#    Go over it and the publisher logs an HTTP 400 and the sensor sits
+#    silently empty. Nothing tells you. I lost time to this on a different
+#    sensor where nine 30-character rows blew straight past the cap.
+#
+#    Use short keys (2-3 chars) and short values. If you are close to the
+#    limit, split into two sensors rather than getting clever.
+#
+# ⚠️ DO NOT encode a value the panel does not read.
+#    A key nothing parses is a value that will silently drift out of sync with
+#    reality and then confuse whoever adds the widget later.
+
+# ── PANEL SIDE ───────────────────────────────────────────────────────────────
+
+esphome:
+  includes:
+    - desk_pet_helpers.h    # indicator_state_int / indicator_state_text
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_env
+    entity_id: sensor.CHANGE_ME_panel_env
+    on_value:
+      - script.execute: refresh_env
+
+script:
+  - id: refresh_env
+    then:
+      - lvgl.label.update:
+          id: lbl_indoor
+          text: !lambda |-
+            // ⚠️ ALWAYS guard on has_state(). An entity that has not arrived
+            //    yet must keep its placeholder, not show a zero. A panel that
+            //    shows 0 when it means "not reported" is lying to you.
+            if (!id(ha_env).has_state()) return std::string("--");
+            // The `fallback` argument is why this parser takes one: absent and
+            // zero have to stay distinguishable. -999 is a value no real
+            // temperature takes, so the caller can tell.
+            int t = indicator_state_int(id(ha_env).state, "in", -999);
+            if (t == -999) return std::string("--");
+            return to_string(t) + "\xC2\xB0";
+      - lvgl.label.update:
+          id: lbl_outdoor
+          text: !lambda |-
+            if (!id(ha_env).has_state()) return std::string("--");
+            int t = indicator_state_int(id(ha_env).state, "out", -999);
+            if (t == -999) return std::string("--");
+            return to_string(t) + "\xC2\xB0";
+
+interval:
+  # ⚠️ REPAINT ON AN INTERVAL, not only from on_value.
+  #
+  # Home Assistant pushes on change, so a slow entity may not push again for
+  # hours and its label sits on placeholder text after every reboot. Measured
+  # on my panel: in the 14 seconds after boot, exactly ONE subscription
+  # received a value (the one repushed every second). Everything slow stayed
+  # empty.
+  #
+  # An interval repaint is a handful of label writes and it makes the panel
+  # independent of WHEN a value arrived.
+  - interval: 30s
+    then:
+      - script.execute: refresh_env
+
+api:
+  # The other half of the same fix: ask HA to re-emit the slow ones on connect.
+  #
+  # Honest caveat: this is not a general "make it refresh" button. An unchanged
+  # value re-emits as `state_reported`, not `state_changed`, and the ESPHome
+  # integration ignores the former. It closes the after-boot gap and nothing
+  # more, which is why you want the interval repaint as well.
+  on_client_connected:
+    - delay: 5s
+    - homeassistant.action:
+        action: homeassistant.update_entity
+        data:
+          entity_id: sensor.CHANGE_ME_panel_env

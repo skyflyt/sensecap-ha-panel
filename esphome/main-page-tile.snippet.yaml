@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTIONAL — the pet's tile on your own main page.
+#
+# `refresh_pet` in desk-pet.pkg.yaml paints six widgets that live on YOUR main
+# page, not on the pet page: btn_pet_tile, bar_tile_hunger, bar_tile_spirit,
+# ico_pet_egg, ico_pet_hatch and lbl_pet_tile. If those ids do not exist your
+# build will not compile.
+#
+# Paste this block into the `widgets:` list of your main page, adjust `x`/`y`
+# to wherever there is room, and you are done. example-device.yaml already
+# includes it.
+#
+# The x/y below place it in the bottom-right of a 480x480 panel.
+# ─────────────────────────────────────────────────────────────────────────────
+
+        # ── The pet tile (2026-08-24) ───────────────────────────────────────
+        # Replaces the 18 px status strip, which Skylar reported as "very small
+        # and hard to click" — correctly: 18 px is under the ~9 mm a fingertip
+        # needs on a 480 px 4" panel. This is 84x86, the same width as the app
+        # row below it, and it carries the actual creature rather than text.
+        # Two status bars added 2026-08-25, hunger on top and spirit on the
+        # bottom, when the separate text strip above the nav bar was removed.
+        #
+        # ⚠️ BOTH BARS READ AS "NEEDS ATTENTION", which is the OPPOSITE encoding
+        # to the pet page — there, hunger is a deficit and spirit is a fill.
+        # That is deliberate and the two views have different jobs. The page is
+        # a detail view where each bar is labelled and can afford its natural
+        # direction. This tile is a GLANCE: the only question it answers is "is
+        # anything wrong", and that question is unanswerable if one full bar is
+        # good news and the other is bad. So here, **short and dark = fine,
+        # long and amber = do something**, for both.
+        - button:
+            id: btn_pet_tile
+            styles: tile
+            align: TOP_LEFT
+            x: 380
+            y: 170
+            width: 84
+            height: 86
+            pad_all: 0
+            on_click:
+              - lvgl.page.show: page_pet
+            widgets:
+              # Inset 6 px each side so the bars sit inside the tile's radius:14
+              # corners rather than poking out of them.
+              - bar:
+                  id: bar_tile_hunger
+                  align: TOP_MID
+                  y: 4
+                  width: 72
+                  height: 5
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  # Track is 0x2A2F37, NOT the tile's own 0x1E2228. The first
+                  # version matched the tile background exactly, so at rest —
+                  # hunger 0, spirit 100 — a zero-length indicator on an
+                  # invisible track meant the bars could not be seen AT ALL.
+                  # Reported as "the pet button does not have status bars".
+                  # "Looks like nothing when healthy" has to stop short of
+                  # "indistinguishable from not being there".
+                  bg_color: 0x2A2F37
+                  indicator:
+                    bg_color: 0x4B5563
+              - image:
+                  id: ico_pet_egg
+                  src: img_pet_egg_sm
+                  align: TOP_MID
+                  y: 12
+              - image:
+                  id: ico_pet_hatch
+                  src: img_pet_hatchling_sm
+                  hidden: true
+                  align: TOP_MID
+                  y: 12
+              - label:
+                  id: lbl_pet_tile
+                  align: TOP_MID
+                  y: 60
+                  text: "Pet"
+                  text_font: montserrat_12
+                  text_color: 0x9AA0A6
+              - bar:
+                  id: bar_tile_spirit
+                  align: BOTTOM_MID
+                  y: -4
+                  width: 72
+                  height: 5
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  # Track is 0x2A2F37, NOT the tile's own 0x1E2228. The first
+                  # version matched the tile background exactly, so at rest —
+                  # hunger 0, spirit 100 — a zero-length indicator on an
+                  # invisible track meant the bars could not be seen AT ALL.
+                  # Reported as "the pet button does not have status bars".
+                  # "Looks like nothing when healthy" has to stop short of
+                  # "indistinguishable from not being there".
+                  bg_color: 0x2A2F37
+                  indicator:
+                    bg_color: 0x4B5563
