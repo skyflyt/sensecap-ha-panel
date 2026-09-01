@@ -81,6 +81,8 @@ repo build up to:
 | **Office** — lights, scenes, blinds, TV, media transport | **Teams** — the page that got the screen out of the drawer: mic, camera, share, hand, leave |
 | ![TV remote](docs/media/remote.png) | ![TV apps](docs/media/apps.png) |
 | A sub-page done plainly: a D-pad remote off the Office page | The app launcher, another sub-page — names, not reverse-DNS ids |
+| ![AI sessions list](docs/media/sessions.png) | ![Claude control page](docs/media/claude.png) |
+| **Sessions** — every AI session on the box, paged, tagged NEW/RUN | **Claude's page** — model picker, quick actions, and a token footer; `--` means no window is open, and the page says so instead of guessing |
 
 What is here is the part that transfers:
 
