@@ -515,16 +515,18 @@ script:
             (cg > 0 && g >= cg) ? lv_color_hex(0xF2B01E) : lv_color_hex(0x2A2F37), LV_PART_MAIN);
           lv_obj_set_style_border_color(id(chip_panel),
             (cp > 0 && p >= cp) ? lv_color_hex(0xF2B01E) : lv_color_hex(0x2A2F37), LV_PART_MAIN);
+      # FED — drawn as a FILL (100 = just fed, amber) so it reads the same way
+      # as spirit: more bar is always better. An earlier version drew hunger as
+      # a deficit, deliberately opposite to spirit; in practice a nearly-empty
+      # amber bar beside a full green one read as "something is wrong" when
+      # both were fine. HA still tracks hun=; the panel shows 100-hun.
       - lvgl.bar.update:
           id: bar_pet_hunger
           value: !lambda |-
-            if (!id(ha_pet_state).has_state()) return 0;
-            return indicator_state_int(id(ha_pet_state).state, "hun", 0);
+            if (!id(ha_pet_state).has_state()) return 100;
+            return 100 - indicator_state_int(id(ha_pet_state).state, "hun", 0);
       # SPIRIT — the need that feeding cannot fix. Only playing raises it, so a
-      # pet that is fed and ignored still fades. Drawn as a FILL (100 = full and
-      # green) where hunger is drawn as a DEFICIT (100 = starving and amber);
-      # they read in opposite directions on purpose, so a glance at two full
-      # bars is never ambiguous about which is good.
+      # pet that is fed and ignored still fades. FILL, 100 = full and green.
       - lvgl.bar.update:
           id: bar_pet_spirit
           value: !lambda |-
@@ -534,7 +536,7 @@ script:
           id: lbl_hunger_val
           text: !lambda |-
             if (!id(ha_pet_state).has_state()) return std::string("");
-            return std::to_string(indicator_state_int(id(ha_pet_state).state, "hun", 0));
+            return std::to_string(100 - indicator_state_int(id(ha_pet_state).state, "hun", 0));
       - lvgl.label.update:
           id: lbl_spirit_val
           text: !lambda |-
@@ -2690,7 +2692,7 @@ lvgl:
             align: TOP_LEFT
             x: 24
             y: 274
-            text: "hunger"
+            text: "fed"
             text_font: montserrat_12
             text_color: 0x6B7280
         - bar:
@@ -2702,10 +2704,10 @@ lvgl:
             height: 10
             min_value: 0
             max_value: 100
-            value: 0
+            value: 100
             bg_color: 0x2A2F37
             indicator:
-              bg_color: 0x9A6700
+              bg_color: 0xF2B01E
         - label:
             id: lbl_hunger_val
             align: TOP_LEFT

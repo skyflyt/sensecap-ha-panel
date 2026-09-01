@@ -42,7 +42,9 @@ desk pet as a complete worked page. Read
 ![The main page](docs/media/panel-main.png)
 
 *The main page: agent status tiles, the notification strip, the pet's tile
-(Lv4, 50%), media and mic state, app badges, and the nav bar.*
+(Lv4, 90%), media and mic state, app badges, and the nav bar. Thirty-four
+sessions want attention; the unread-mail count stays grey because none of it
+is flagged.*
 
 | | |
 |---|---|
@@ -193,9 +195,9 @@ It hatches from an egg and grows through eight stages. It earns XP from things
 you did: touches on the panel, rounds of its minigames, and (in my setup, not
 in this repo) agent output volume, git commits and issues shipped.
 
-Two needs. **Hunger** is about care and feeding fixes it. **Spirit** is about
-attention and only playing fixes it, so a pet that is fed and ignored still
-fades.
+Two needs, both drawn as fills so more bar is always better. **Fed** is about
+care and feeding raises it. **Spirit** is about attention and only playing
+raises it, so a pet that is fed and ignored still fades.
 
 **Decay stops when you are not there.** Five gates, each a one-line template
 condition:
