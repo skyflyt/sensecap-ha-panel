@@ -263,6 +263,36 @@ in the package yet:
 | ![Pip speaks](docs/media/pet-speaks.png) | ![Empty pod](docs/media/pet-trip.png) |
 | **He speaks.** A line in a bubble, written by `llama3.2:3b` on the workstation from what the panel already knows — sessions waiting, next meeting, weather, his own mood. Template lines when the workstation is off, one line per ten minutes at most. The panel only *asks*; HA picks the voice | **Time-lapse.** Every ten minutes HA fetches `/screenshot`, keeps a 240px frame, and stitches the day into a GIF at 23:30. The panel photographs itself. Frames skip while the PC is locked |
 
+### Powers 2.0
+
+Powers stopped being four fixed buttons (2026-09-02). They are now a **bag**
+of eleven, **drawn** at unlock levels — two offered, you pick one, the other
+goes back — with **cooldowns**, **hold-to-cast** for anything that changes the
+room, and Pip **narrating the result** in his own voice instead of a grey
+status label. Every power is something you'd otherwise do by hand and none of
+them sends, deletes, moves or spends anything; that rule is load-bearing.
+
+| | |
+|---|---|
+| ![Powers page](docs/media/powers-page.png) | ![Draw ceremony](docs/media/powers-draw.png) |
+| The page: equipped rows with READY / recharging state, `(hold)` on the ones that act on the room, empty slots that say exactly when they open, and the amber row when he has found something | The ceremony: two cards, tier, one-liner, tap to choose. The pair is seeded on `md5(name\|form\|draw_index)`, so a crash or a retry can never re-roll it |
+| ![Cooldown](docs/media/powers-cooldown.png) | |
+| After a cast: the row greys, "ready in 5m", a thin bar refills. A second cast inside the cooldown is refused with a bubble line — written verbatim, never through the LLM (see below) | |
+
+The bag: **Tidy** (sweep both inboxes), **Den** (lights down, mic muted,
+media off — hold), **Doctor** (run the panel health script), **Fetch** (bring
+whatever is shouting loudest to the front), **Scout** (what's unlocked, open,
+left on, low on battery), **Herald** (today's brief + next meeting), **Ledger**
+(today's XP by source), **Forecast** (tomorrow + the roof), **Wrap**
+(end-of-day: Den + what's parked — hold), **Recall** (what he said and
+brought), **Snapshot** (a frame into the time-lapse album).
+
+One lesson from building it, worth more than the feature: **a 3B model asked
+to re-voice a refusal will turn it into a success.** "I do not have Tidy
+equipped" came back as "I used my Tidy power to organize the desktop." Tidy had
+not run. Refusals now bypass the model and are written verbatim; only genuine
+results get the voice.
+
 Nothing in any of it knows who you are: the owner's name and the agent's
 name are two `input_text` settings (`pet_owner_name`, `pet_agent_name`) that
 the voice prompt, the fallback lines and the "petted by" logbook credit all
