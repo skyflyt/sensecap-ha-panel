@@ -293,6 +293,33 @@ equipped" came back as "I used my Tidy power to organize the desktop." Tidy had
 not run. Refusals now bypass the model and are written verbatim; only genuine
 results get the voice.
 
+### Pip everywhere
+
+He is no longer only on the panel (2026-09-03):
+
+- **He is the house's voice.** A Home Assistant Assist agent named Pip
+  (Gemini, with Assist control on) whose system prompt is a *template*,
+  rendered per request with his level and mood, what he last said, his
+  latest postcard, the weather, the next calendar items and whether his
+  person is at the desk. "What's the weather?" → *"It is 57 F and sunny
+  outside, Skylar."* "What's the temperature in the office?" still reads the
+  real sensor. The Pip pipeline is the default and lives on the Home
+  Assistant Voice PE; the previous pipelines stay as fallbacks.
+- **He moves.** A dashboard card on the Areas view: while the PC is unlocked
+  it shows an empty dock — "Pip is at his desk" — and while the PC is locked
+  (or you're away) it shows his animated sprite with a speech bubble, the
+  weather and the next agenda lines. The panel goes dark at the same moment,
+  so he is only ever in one place.
+- **He delivers.** The bubble text is his: written when the PC locks, hourly
+  while you're away, and at 07:00 as a "your day" line, from an agenda sensor
+  (a trigger-based template sensor calling `calendar.get_events`) and the
+  weather.
+- **He listens.** While the Voice PE is listening or answering, the green
+  sound arcs appear on the panel sprite — the same overlay as a live call.
+
+The card is `dashboard-pip-card.yaml` in the private tree for now; sprites are
+the stage PNGs stitched into 256px looping GIFs, served from `/local/`.
+
 Nothing in any of it knows who you are: the owner's name and the agent's
 name are two `input_text` settings (`pet_owner_name`, `pet_agent_name`) that
 the voice prompt, the fallback lines and the "petted by" logbook credit all
